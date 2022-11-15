@@ -16,24 +16,17 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "esp_bt.h"
-#include "esp_bt_defs.h"
-#if CONFIG_BT_BLE_ENABLED
 #include "esp_gap_ble_api.h"
 #include "esp_gatts_api.h"
 #include "esp_gatt_defs.h"
-#endif
 #include "esp_bt_main.h"
 #include "esp_bt_device.h"
-
 #include "esp_hidd.h"
 #include "esp_hid_gap.h"
-
-#include "bridge.h"
+#include "blink.h"
 #include "report_map.h"
 
 static const char *TAG = "HID_DEV_DEMO";
-
 volatile uint8_t ble_connected = 0;
 
 typedef struct
@@ -44,29 +37,16 @@ typedef struct
     uint8_t *buffer;
 } local_param_t;
 
-
-
-//#if CONFIG_BT_BLE_ENABLED
 static local_param_t s_ble_hid_param = {0};
 
-
-
-/*
-// send the buttons, change in x, and change in y
-void send_mouse(uint8_t buttons, char dx, char dy, char wheel)
+void ble_send(size_t mapid, size_t report_id, uint8_t *data, uint8_t length)
 {
-    static uint8_t buffer[4] = {0};
-    buffer[0] = buttons;
-    buffer[1] = dx;
-    buffer[2] = dy;
-    buffer[3] = wheel;
-    
-    esp_hidd_dev_input_set(s_ble_hid_param.hid_dev, 0, 0, buffer, 4);
-}*/
-
-void ble_send(size_t mapid, uint8_t *data, uint8_t length)
-{
-    ESP_ERROR_CHECK(esp_hidd_dev_input_set(s_ble_hid_param.hid_dev, mapid, 0, data, length));
+    if(ble_connected){
+        esp_err_t err = esp_hidd_dev_input_set(s_ble_hid_param.hid_dev, mapid, report_id, data, length);
+        if(err != ESP_OK)   printf("ble send failed, error code:%d\n", err);
+    }else{
+        printf("ignore data because ble is not connected\n");
+    }
 }
 
 static void ble_hidd_event_callback(void *handler_args, esp_event_base_t base, int32_t id, void *event_data)
@@ -126,7 +106,7 @@ static void ble_hidd_event_callback(void *handler_args, esp_event_base_t base, i
     return;
 }
 
-static esp_hid_raw_report_map_t ble_report_maps[STORE_MAP_COUNT];
+static esp_hid_raw_report_map_t ble_report_maps[STORE_MAP_COUNT + PREDEFINED_MAP_COUNT];
 static esp_hid_device_config_t ble_hid_config = {
     .vendor_id          = 0x6666,
     .product_id         = 0x6666,
@@ -148,17 +128,20 @@ void ble_main(void)
     }
     ESP_ERROR_CHECK( ret );
 
-    ble_hid_config.report_maps_len = map_index.map_count;
-    for(int i=0; i<map_index.map_count;i++){
-        esp_hid_raw_report_map_t *ble_map = &ble_report_maps[i];
-        ble_map->len = map_index.indexes[i].length;
+
+    ble_hid_config.report_maps_len = map_info_table.map_count + PREDEFINED_MAP_COUNT;
+    printf("registered %d maps for ble\n", ble_hid_config.report_maps_len);
+    ble_report_maps[0].data = standard_mouse_report_desc;
+    ble_report_maps[0].len = standard_mouse_report_desc_length;
+    for(int i=0; i<map_info_table.map_count;i++){
+        esp_hid_raw_report_map_t *ble_map = &ble_report_maps[i + PREDEFINED_MAP_COUNT];
+        ble_map->len = map_info_table.indexes[i].length;
         ble_map->data = saved_maps[i];
     }
 
     ESP_LOGI(TAG, "setting hid gap, mode:%d", HID_DEV_MODE);
     ret = esp_hid_gap_init(HID_DEV_MODE);
     ESP_ERROR_CHECK( ret );
-
     ret = esp_hid_ble_gap_adv_init(ESP_HID_APPEARANCE_GENERIC, ble_hid_config.device_name);
     ESP_ERROR_CHECK( ret );
 

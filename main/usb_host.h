@@ -19,7 +19,6 @@
 void printState();
 void usb_process();
 
-
 #define  NUM_USB 2
 void initStates( int DP0,int DM0,int DP1,int DM1,int DP2,int DM2,int DP3,int DM3);
 void usbMess(uint8_t src,uint8_t len,uint8_t *data);

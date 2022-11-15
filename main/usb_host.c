@@ -15,6 +15,8 @@
 #include "soc/rtc.h"
 #include <math.h>
 #include "esp_heap_caps.h"
+
+#include "utils.h"
 /*******************************
 *    warning!!!: any copy of this code or his part must include this: 
 *  "The original was written by Dima Samsonov @ Israel sdima1357@gmail.com on 3/2021" *
@@ -22,7 +24,6 @@
 ********************************/
 
 #include "usb_host.h"
-#include "bridge.h"
 #include "report_map.h"
 #include "esp_log.h"
 
@@ -1784,19 +1785,37 @@ static int cntl = 0;
 		//~ printf("\n");
 		if(pcurrent->ufPrintDesc&1)
 		{
+			/*typedef __packed struct
+				{
+					uint8_t bLength;
+					uint8_t bDescriptorType;
+					uint16_t bcdUSB;
+					uint8_t bDeviceClass;
+					uint8_t bDeviceSubClass;
+					uint8_t bDeviceProtocol;
+					uint8_t bMaxPacketSize0;
+					uint16_t idVendor;
+					uint16_t idProduct;
+					uint16_t bcdDevice;
+					uint8_t iManufacturer;
+					uint8_t iProduct;
+					uint8_t iSerialNumber;
+					uint8_t bNumConfigurations;
+				} sDevDesc;*/
 			pcurrent->ufPrintDesc &= ~(uint32_t)1;
-			//~ printf("desc.bcdUSB          = %02x\n",pcurrent->desc.bcdUSB);
-			//~ printf("desc.bDeviceClass    = %02x\n",pcurrent->desc.bDeviceClass);
-			//~ printf("desc.bDeviceSubClass = %02x\n",pcurrent->desc.bDeviceSubClass);
-			//~ printf("desc.bDeviceProtocol = %02x\n",pcurrent->desc.bDeviceProtocol);
-			//~ printf("desc.bMaxPacketSize0 = %02x\n",pcurrent->desc.bMaxPacketSize0);
-			//~ printf("desc.idVendor        = %02x\n",pcurrent->desc.idVendor);
-			//~ printf("desc.idProduct       = %02x\n",pcurrent->desc.idProduct);
+			printf("desc.bcdUSB          = %02x\n",pcurrent->desc.bcdUSB);
+			printf("desc.bDeviceClass    = %02x\n",pcurrent->desc.bDeviceClass);
+			printf("desc.bDeviceSubClass = %02x\n",pcurrent->desc.bDeviceSubClass);
+			printf("desc.bDeviceProtocol = %02x\n",pcurrent->desc.bDeviceProtocol);
+			printf("desc.bMaxPacketSize0 = %02x\n",pcurrent->desc.bMaxPacketSize0);
+			printf("desc.idVendor        = %02x\n",pcurrent->desc.idVendor);
+			printf("desc.idProduct       = %02x\n",pcurrent->desc.idProduct);
 			printf("desc.bcdDevice       = %02x\n",pcurrent->desc.bcdDevice);
 			printf("desc.iManufacturer   = %02x\n",pcurrent->desc.iManufacturer);
 			printf("desc.iProduct        = %02x\n",pcurrent->desc.iProduct);
 			printf("desc.iSerialNumber   = %02x\n",pcurrent->desc.iSerialNumber);
 			printf("desc.bNumConfigurations = %02x\n",pcurrent->desc.bNumConfigurations);
+			
 		}
 		if(pcurrent->ufPrintDesc&2)
 		{
@@ -1879,15 +1898,15 @@ static int cntl = 0;
 							{
 								sIntfDesc sIntf;
 								memcpy(&sIntf,&pcurrent->descrBuffer[pos],len);
-								//printf("sIntf.bLength      = %02x\n",sIntf.bLength);
-								//printf("sIntf.bType        = %02x\n",sIntf.bType);
-								//~ printf("sIntf.iNum         = %02x\n",sIntf.iNum);
-								//~ printf("sIntf.iAltString   = %02x\n",sIntf.iAltString);
-								//~ printf("sIntf.bEndPoints   = %02x\n",sIntf.bEndPoints);
-								//~ printf("sIntf.iClass       = %02x\n",sIntf.iClass);
-								//~ printf("sIntf.iSub         = %02x\n",sIntf.iSub);
-								//~ printf("sIntf.iProto       = %d\n",sIntf.iProto);
-								//~ printf("sIntf.iIndex       = %d\n",sIntf.iIndex);
+								printf("sIntf.bLength      = %02x\n",sIntf.bLength);
+								printf("sIntf.bType        = %02x\n",sIntf.bType);
+								printf("sIntf.iNum         = %02x\n",sIntf.iNum);
+								printf("sIntf.iAltString   = %02x\n",sIntf.iAltString);
+								printf("sIntf.bEndPoints   = %02x\n",sIntf.bEndPoints);
+								printf("sIntf.iClass       = %02x\n",sIntf.iClass);
+								printf("sIntf.iSub         = %02x\n",sIntf.iSub);
+								printf("sIntf.iProto       = %d\n",sIntf.iProto);
+								printf("sIntf.iIndex       = %d\n",sIntf.iIndex);
 
 							}
 							else if (type == 0x21)

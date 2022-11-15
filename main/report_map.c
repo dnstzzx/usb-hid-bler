@@ -1,15 +1,15 @@
 #include "report_map.h"
 #include "nvs_flash.h"
 #include <string.h>
-#include "esp_random.h"
-#include "bridge.h"
+
+#include "utils.h"
 
 const char *map_index_partition = "report_maps";
 const char *map_index_ns = "maps";
 const char *map_content_partition = "report_maps";
 const char *map_content_ns = "maps";
 
-Map_Index map_index;
+Map_Info_Table map_info_table;
 Report_Map_BUFF saved_maps[STORE_MAP_COUNT];
 
 void load_report_maps();
@@ -30,35 +30,35 @@ void load_report_maps(){
 
     
     ESP_ERROR_CHECK(nvs_open_from_partition(map_index_partition, map_index_ns, NVS_READWRITE, &handle));
-    size_t read_length = sizeof(map_index);
+    size_t read_length = sizeof(map_info_table);
 
-    esp_err_t err = nvs_get_blob(handle, "index", &map_index, &read_length);
+    esp_err_t err = nvs_get_blob(handle, "index", &map_info_table, &read_length);
     nvs_close(handle);
     
     if(err == ESP_ERR_NVS_NOT_FOUND){
         printf("No report map index found, creating a new one\n");
-        map_index.map_count = 0;
-        save_map_index();
+        map_info_table.map_count = 0;
+        save_map_info_table();
     }else{
         ESP_ERROR_CHECK(err);
-        printf("map index loaded,now load %d report maps\n", map_index.map_count);
+        printf("map index loaded,now load %d report maps\n", map_info_table.map_count);
     }
     char map_id[16];
-    for(int i=0;i<map_index.map_count;i++){
+    for(int i=0;i<map_info_table.map_count;i++){
         sprintf(map_id, "map%d", i);
         load_map(map_id, saved_maps[i]);
         printf("map %d loaded", i);
-        print_hex_dump("", saved_maps[i], map_index.indexes[i].length);
+        print_hex_dump("", saved_maps[i], map_info_table.indexes[i].length);
     }
     printf("map index and saved report maps load completed\n");
 }
 
-void save_map_index(){
+void save_map_info_table(){
     nvs_handle_t handle;
-    Map_Index saving_index;
-    memcpy(&saving_index, &map_index, sizeof(Map_Index));
+    Map_Info_Table saving_table;
+    memcpy(&saving_table, &map_info_table, sizeof(Map_Info_Table));
     nvs_open_from_partition(map_index_partition, map_index_ns, NVS_READWRITE, &handle);
-    nvs_set_blob(handle, "index", (const char *)&saving_index, sizeof(Map_Index));
+    nvs_set_blob(handle, "index", (const char *)&saving_table, sizeof(Map_Info_Table));
     nvs_commit(handle);
     nvs_close(handle);
 }
@@ -83,7 +83,7 @@ void save_report_map(int index){
 
     nvs_handle_t handle;
     ESP_ERROR_CHECK(nvs_open_from_partition(map_content_partition, map_content_ns, NVS_READWRITE, &handle));
-    ESP_ERROR_CHECK(nvs_set_blob(handle, (const char *)map_id, saved_maps[index], map_index.indexes[index].length));
+    ESP_ERROR_CHECK(nvs_set_blob(handle, (const char *)map_id, saved_maps[index], map_info_table.indexes[index].length));
     ESP_ERROR_CHECK(nvs_commit(handle));
     nvs_close(handle);
 }
@@ -104,8 +104,8 @@ static uint32_t calc_report_map_sum(Report_Map_BUFF map, size_t map_length){
 int check_report_map(Report_Map_BUFF map, size_t length){
     uint32_t sum = calc_report_map_sum(map, length);
     int report_index = -1;
-    for(int i=0; i<map_index.map_count; i++){
-        if(map_index.indexes[i].length == length && map_index.indexes[i].sum == sum){
+    for(int i=0; i<map_info_table.map_count; i++){
+        if(map_info_table.indexes[i].length == length && map_info_table.indexes[i].sum == sum){
             char same = 1;
             uint8_t *m = saved_maps[i];
             for(int j=0;j<length;j++){
@@ -123,36 +123,21 @@ int check_report_map(Report_Map_BUFF map, size_t length){
     return report_index;
 }
 
-static void random_id(char *id, size_t length){
-    for(int i=0;i<length;i++){
-        uint32_t rand = esp_random();
-        if(rand % 4 == 0){
-            rand = rand >> 2;
-            id[i] = '0' + rand % 10;
-        }else{
-            rand = rand >> 2;
-            id[i] = 'a' + rand % 26;
-        }
-    }
-    id[length] = '\0';
-    
-}
-
 
 int add_report_map(uint8_t *map, size_t length){
-    if(map_index.map_count == STORE_MAP_COUNT - 1){
+    if(map_info_table.map_count == STORE_MAP_COUNT - 1){
         return -1;
     }
 
-    int index = map_index.map_count;
-    Map_Index_Item *index_item = &map_index.indexes[index];
+    int index = map_info_table.map_count;
+    Map_Info_Item *info_item = &map_info_table.indexes[index];
     uint32_t sum = calc_report_map_sum(map, length);
-    index_item->length = length;
-    index_item->sum = sum;
-    index_item->process_mode = PASSTHROUGH;
+    info_item->length = length;
+    info_item->sum = sum;
+    info_item->process_mode = PROCESS_MODE_NONE;
     
     memcpy(saved_maps[index], map, length);
     
-    map_index.map_count ++;
+    map_info_table.map_count ++;
     return index;
 }

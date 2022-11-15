@@ -1,0 +1,3 @@
+[submodule "hid-translater"]
+	path = components/hid_translater/src
+	url = git@github.com:dnstzzx/hid-report-translater.git
