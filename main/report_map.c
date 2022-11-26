@@ -15,7 +15,7 @@ Report_Map_BUFF saved_maps[STORE_MAP_COUNT];
 void load_report_maps();
 static size_t load_map(char *map_id, Report_Map_BUFF buff);
 
-void init_map(){
+void map_init(){
     ESP_ERROR_CHECK(nvs_flash_init_partition(map_index_partition));
     /*
     if (!strcmp(map_index_partition, map_content_partition)){

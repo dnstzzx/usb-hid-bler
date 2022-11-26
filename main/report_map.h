@@ -4,7 +4,7 @@
 #include "translate.h"
 
 #define MAP_BUFF_SIZE 0x100
-#define PREDEFINED_MAP_COUNT 1
+#define PREDEFINED_MAP_COUNT 2
 #define STORE_MAP_COUNT 32
 
 typedef uint8_t Report_Map_BUFF[MAP_BUFF_SIZE];
@@ -25,7 +25,7 @@ typedef struct{
 extern Map_Info_Table map_info_table;
 extern Report_Map_BUFF saved_maps[STORE_MAP_COUNT];
 
-void init_map();
+void map_init();
 void save_map_info_table();
 void save_report_map(int map_index);
 

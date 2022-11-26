@@ -25,6 +25,7 @@
 #include "esp_hid_gap.h"
 #include "blink.h"
 #include "report_map.h"
+#include "manager.h"
 
 static const char *TAG = "HID_DEV_DEMO";
 volatile uint8_t ble_connected = 0;
@@ -81,6 +82,9 @@ static void ble_hidd_event_callback(void *handler_args, esp_event_base_t base, i
     case ESP_HIDD_OUTPUT_EVENT: {
         ESP_LOGI(TAG, "OUTPUT[%u]: %8s ID: %2u, Len: %d, Data:", param->output.map_index, esp_hid_usage_str(param->output.usage), param->output.report_id, param->output.length);
         ESP_LOG_BUFFER_HEX(TAG, param->output.data, param->output.length);
+        if(param->output.map_index == 0 && param->output.report_id == MANAGER_OUTPUT_REPORT_ID){
+            on_manager_output(param->output.data, param->output.length);
+        }
         break;
     }
     case ESP_HIDD_FEATURE_EVENT: {
@@ -131,8 +135,11 @@ void ble_main(void)
 
     ble_hid_config.report_maps_len = map_info_table.map_count + PREDEFINED_MAP_COUNT;
     printf("registered %d maps for ble\n", ble_hid_config.report_maps_len);
-    ble_report_maps[0].data = standard_mouse_report_desc;
-    ble_report_maps[0].len = standard_mouse_report_desc_length;
+    ble_report_maps[0].data = manager_report_desc;
+    ble_report_maps[0].len = manager_report_desc_length;
+    ble_report_maps[1].data = standard_mouse_report_desc;
+    ble_report_maps[1].len = standard_mouse_report_desc_length;
+
     for(int i=0; i<map_info_table.map_count;i++){
         esp_hid_raw_report_map_t *ble_map = &ble_report_maps[i + PREDEFINED_MAP_COUNT];
         ble_map->len = map_info_table.indexes[i].length;

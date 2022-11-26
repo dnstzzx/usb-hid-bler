@@ -1,11 +1,13 @@
 #include "blink.h"
+#include "macro.h"
 #include "ble_device.h"
 #include "report_map.h"
 #include <stdio.h>
 
 void app_main(void){
     blink_init();
-    init_map();
+    map_init();
+    macro_init();
     ble_main();
 }
 
