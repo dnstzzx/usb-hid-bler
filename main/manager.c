@@ -2,6 +2,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <driver/gpio.h>
+#include <esp_system.h>
+#include "usb_host.h"
+#include "usb_main.h"
+#include "cJSON.h"
 #include "manager.h"
 #include "ble_device.h"
 
@@ -14,9 +19,35 @@
 
 */
 
+
+void make_fail_response(response_t *response, uint16_t session, char *reason){
+    size_t l = strlen(reason);
+    if(l >= sizeof(response->data)) return make_fail_response(response, session, "返回数据长度超出编码限制");
+    response->session = session;
+    response->success = 0;
+    response->length = l;
+    strcpy((char *)response->data, reason);
+}
+
+void make_string_response(response_t *response, uint16_t session, char *msg){
+    size_t l = strlen(msg);
+    if(l >= sizeof(response->data)) return make_fail_response(response, session, "响应数据长度超出编码限制");
+    response->session = session;
+    response->success = 1;
+    response->length = l;
+    strcpy((char *)response->data, msg);
+}
+
+void make_object_response(response_t *response, uint16_t session, cJSON *obj){
+    char *s = cJSON_PrintUnformatted(obj);
+    make_string_response(response, session, s);
+    cJSON_free(s);
+}
+
 void echo(request_t *request_in, response_t *response_out){
     response_out->session = request_in->session;
     response_out->length = request_in->length;
+    response_out->success = 1;
     memcpy(response_out->data, request_in->data, request_in->length);
     if(request_in->data[request_in->length - 1] != '\0'){
         response_out->data[request_in->length] = '\0';
@@ -24,9 +55,46 @@ void echo(request_t *request_in, response_t *response_out){
     }
 }
 
+/*
+interface Device_Info{
+    battery_voltage: number,
+    slots: {
+        id: number,
+        mode: number
+    }[]
+}
+*/
+void get_info(request_t *request_in, response_t *response_out){
+    cJSON *json = cJSON_CreateObject();
+    cJSON_AddNumberToObject(json, "battery_voltage", 2);
+    cJSON *slots = cJSON_AddArrayToObject(json, "slots");
+    for(int i=0;i<NUM_USB;i++){
+        cJSON *slot = cJSON_CreateObject();
+        cJSON_AddNumberToObject(slot, "id", i);
+        cJSON_AddNumberToObject(slot, "mode", install_statuses[i][0].mode);
+        cJSON_AddItemToArray(slots, slot);
+    }
+    
+    make_object_response(response_out, request_in->session, json);
+    cJSON_Delete(json);
+}
+
+void restart(request_t *request_in, response_t *response_out){
+    if(request_in->length != 1 || (request_in->data[0] != '0' && request_in->data[0] != '1')){
+        make_fail_response(response_out, request_in->session, "参数格式错误");
+    }
+    uint8_t download_mode = request_in->data[0] == '1';
+    if(download_mode){
+        gpio_set_direction(GPIO_NUM_9, GPIO_MODE_OUTPUT);
+        gpio_pulldown_en(GPIO_NUM_9);
+    }
+    esp_restart();
+    
+}
+
 typedef void(*handler_t)(request_t *, response_t *);
 handler_t handlers[] = {
-    echo
+    echo, get_info, restart
 };
 
 #define DEBUG_PRINT_OUTPUT_MSG
@@ -35,7 +103,8 @@ void on_manager_output(uint8_t *data, uint16_t length){
     request_t request;
     response_t response;
     memcpy(&request, data, length);
-    request.data[length] = 0;
+    if(request.length > sizeof(request.data))   return;
+    request.data[request.length] = '\0';
     if(request.opcode >= sizeof(handlers) / sizeof(handler_t)) return;
     handlers[request.opcode](&request, &response);
     #ifdef DEBUG_PRINT_OUTPUT_MSG

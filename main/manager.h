@@ -21,7 +21,8 @@ typedef struct{
 typedef struct{
     uint16_t session;   //  0
     uint16_t length;    //  2
-    uint8_t  data[MANAGE_MESSAGE_LENGTH - 4];   // 4
+    uint8_t  success;   //  4
+    uint8_t  data[MANAGE_MESSAGE_LENGTH - 5];   // 5
 }response_t;
 #pragma pack()
 
