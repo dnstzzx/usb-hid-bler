@@ -4,6 +4,7 @@
 #include <string.h>
 #include <driver/gpio.h>
 #include <esp_system.h>
+#include <soc/rtc_cntl_reg.h>
 #include "usb_host.h"
 #include "usb_main.h"
 #include "cJSON.h"
@@ -85,8 +86,7 @@ void restart(request_t *request_in, response_t *response_out){
     }
     uint8_t download_mode = request_in->data[0] == '1';
     if(download_mode){
-        gpio_set_direction(GPIO_NUM_9, GPIO_MODE_OUTPUT);
-        gpio_pulldown_en(GPIO_NUM_9);
+        *((uint32_t *)RTC_CNTL_OPTION1_REG) = 1;
     }
     esp_restart();
     
