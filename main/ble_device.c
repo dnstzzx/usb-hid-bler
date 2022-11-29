@@ -23,7 +23,9 @@
 #include "esp_bt_device.h"
 #include "esp_hidd.h"
 #include "esp_hid_gap.h"
-#include "blink.h"
+#include "peripherals.h"
+// 常量名冲突
+#undef HID_USAGE_PAGE_GENERIC_DESKTOP
 #include "report_map.h"
 #include "manager.h"
 

@@ -10,6 +10,7 @@
 #include "cJSON.h"
 #include "manager.h"
 #include "ble_device.h"
+#include "peripherals.h"
 
 
 /*requests
@@ -67,7 +68,7 @@ interface Device_Info{
 */
 void get_info(request_t *request_in, response_t *response_out){
     cJSON *json = cJSON_CreateObject();
-    cJSON_AddNumberToObject(json, "battery_voltage", 2);
+    cJSON_AddNumberToObject(json, "battery_voltage", battery_voltage);
     cJSON *slots = cJSON_AddArrayToObject(json, "slots");
     for(int i=0;i<NUM_USB;i++){
         cJSON *slot = cJSON_CreateObject();
@@ -75,7 +76,6 @@ void get_info(request_t *request_in, response_t *response_out){
         cJSON_AddNumberToObject(slot, "mode", install_statuses[i][0].mode);
         cJSON_AddItemToArray(slots, slot);
     }
-    
     make_object_response(response_out, request_in->session, json);
     cJSON_Delete(json);
 }
