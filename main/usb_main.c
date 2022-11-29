@@ -17,15 +17,17 @@
 #include "soc/periph_defs.h"
 #include "esp_log.h"
 
+#include "board.h"
 #include "usb_host.h"
+#include "usb_main.h"
 #include "utils.h"
 #include "ble_device.h"
 
 #define xQueueHandle QueueHandle_t
-#define DP_P   3
-#define DM_P  4
-#define DP_P1  5
-#define DM_P1  6
+#define DP_P   BOARD_USB1_PIN_DP
+#define DM_P   BOARD_USB1_PIN_DM
+#define DP_P1  BOARD_USB2_PIN_DP
+#define DM_P1  BOARD_USB2_PIN_DM
 #define DP_P2  -1
 #define DM_P2  -1
 #define DP_P3  -1
@@ -43,13 +45,7 @@ struct new_usb_report_map_info{
     uint8_t hidid;
 };
 
-struct install_status_t{
-    enum Process_Mode mode;
-    mouse_translate_t mouse_translate;
-    int mapid;
-};
-
-struct install_status_t install_statuses[NUM_USB][4];  // install_statuses[usbid][hidid]
+install_status_t install_statuses[NUM_USB][4];  // install_statuses[usbid][hidid]
 
 static xQueueHandle usb_mess_Que = NULL;
 static xQueueHandle new_device_Que = NULL;
@@ -153,7 +149,7 @@ void handle_new_device(void *vparam){
             for(int i=0; i<usb->hid_report_desc_count; i++){
                 uint8_t *report_map = usb->hid_report_desc_buffer[i];
                 size_t length = usb->hid[i].wDescriptorLength;
-                struct install_status_t *install_status = &install_statuses[usb->selfNum][i];
+                install_status_t *install_status = &install_statuses[usb->selfNum][i];
 
                 // try translate
                 translate_model_t model = detect_translate_model(report_map, length);
@@ -217,7 +213,7 @@ void usb_recv(void *param)
             uint8_t hidid = msg.src % 4;
             uint8_t usbid = msg.src >> 2;
             uint8_t length = msg.len;
-            struct install_status_t *status = &install_statuses[usbid][hidid];
+            install_status_t *status = &install_statuses[usbid][hidid];
 
             uint8_t *msg_data = msg.data;
             printf("msg from usb%d/hid%d", usbid, hidid);
