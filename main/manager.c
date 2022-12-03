@@ -12,49 +12,58 @@
 #include "ble_device.h"
 #include "peripherals.h"
 
+/*
+response_t必须由make_xxx_response系列函数返回，否则会导致越界访问和内存泄漏
 
-/*requests
-
+request op codes
 0   echo
 1   get_info
 2   restart
+3   set_device_name
+4   get_macros
+5   modify_macros
 
 */
 
 
-void make_fail_response(response_t *response, uint16_t session, char *reason){
-    size_t l = strlen(reason);
-    if(l >= sizeof(response->data)) return make_fail_response(response, session, "返回数据长度超出编码限制");
-    response->session = session;
-    response->success = 0;
-    response->length = l;
-    strcpy((char *)response->data, reason);
-}
+#define block_data_length  (sizeof(((long_msg_block_t *)0)->data))
+#define compute_block_count(msg_length) (msg_length + (block_data_length - 1)) / block_data_length
 
-void make_string_response(response_t *response, uint16_t session, char *msg){
+response_t *make_string_response(uint16_t session, char *msg){
     size_t l = strlen(msg);
-    if(l >= sizeof(response->data)) return make_fail_response(response, session, "响应数据长度超出编码限制");
-    response->session = session;
-    response->success = 1;
-    response->length = l;
-    strcpy((char *)response->data, msg);
-}
-
-void make_object_response(response_t *response, uint16_t session, cJSON *obj){
-    char *s = cJSON_PrintUnformatted(obj);
-    make_string_response(response, session, s);
-    cJSON_free(s);
-}
-
-void echo(request_t *request_in, response_t *response_out){
-    response_out->session = request_in->session;
-    response_out->length = request_in->length;
-    response_out->success = 1;
-    memcpy(response_out->data, request_in->data, request_in->length);
-    if(request_in->data[request_in->length - 1] != '\0'){
-        response_out->data[request_in->length] = '\0';
-        response_out->length ++;
+    response_t *response;
+    size_t msg_size = offsetof(response_t, data) + l;
+    if(msg_size >= sizeof(response_t)){  
+        msg_size = compute_block_count(msg_size) * block_data_length;   // 向上取block data长度整数倍
+        response = malloc(msg_size + offsetof(long_msg_block_t, data) + 1);                     // 为block 0包头预留空间
+        response = (response_t *) (((uint8_t *)response) + offsetof(long_msg_block_t, data));
+    }else{
+       response = malloc(sizeof(response_t)); 
     }
+    
+    response->session = session;
+    response->success = true;
+    response->length = l;
+    memcpy(response->data, msg, l);
+    ((char *)response->data)[l] = '\0';
+    return response;
+}
+
+response_t *make_fail_response(uint16_t session, char *reason){
+    response_t *resp = make_string_response(session, reason);
+    resp->success = false;
+    return resp;
+}
+
+response_t *make_object_response(uint16_t session, cJSON *obj){
+    char *s = cJSON_PrintUnformatted(obj);
+    response_t *resp = make_string_response(session, s);
+    cJSON_free(s);
+    return resp;
+}
+
+response_t *echo(request_t *request_in){
+    return make_string_response(request_in->session, (char *)request_in->data);
 }
 
 /*
@@ -66,7 +75,7 @@ interface Device_Info{
     }[]
 }
 */
-void get_info(request_t *request_in, response_t *response_out){
+response_t *get_info(request_t *request_in){
     cJSON *json = cJSON_CreateObject();
     cJSON_AddNumberToObject(json, "battery_voltage", battery_voltage);
     cJSON *slots = cJSON_AddArrayToObject(json, "slots");
@@ -76,43 +85,72 @@ void get_info(request_t *request_in, response_t *response_out){
         cJSON_AddNumberToObject(slot, "mode", install_statuses[i][0].mode);
         cJSON_AddItemToArray(slots, slot);
     }
-    make_object_response(response_out, request_in->session, json);
+    response_t *resp = make_object_response(request_in->session, json);
     cJSON_Delete(json);
+    return resp;
 }
 
-void restart(request_t *request_in, response_t *response_out){
+response_t *restart(request_t *request_in){
     if(request_in->length != 1 || (request_in->data[0] != '0' && request_in->data[0] != '1')){
-        make_fail_response(response_out, request_in->session, "参数格式错误");
+        return make_fail_response(request_in->session, "参数格式错误");
     }
     uint8_t download_mode = request_in->data[0] == '1';
     if(download_mode){
         *((uint32_t *)RTC_CNTL_OPTION1_REG) = 1;
     }
     esp_restart();
-    
+}
+
+response_t *set_device_name(request_t *request_in){
+    return make_string_response(request_in->session, "ok");
 }
 
 typedef void(*handler_t)(request_t *, response_t *);
+
+typedef response_t *(*handler_t)(request_t *);
 handler_t handlers[] = {
-    echo, get_info, restart
+    echo, get_info, restart, set_device_name, get_macros
 };
 
 #define DEBUG_PRINT_OUTPUT_MSG
-void on_manager_output(uint8_t *data, uint16_t length){
-    if(length != MANAGE_MESSAGE_LENGTH) return;
-    request_t request;
-    response_t response;
-    memcpy(&request, data, length);
-    if(request.length > sizeof(request.data))   return;
-    request.data[request.length] = '\0';
-    if(request.opcode >= sizeof(handlers) / sizeof(handler_t)) return;
-    handlers[request.opcode](&request, &response);
+void handle_request(request_t *request){
+    response_t *response;
+    if(request->opcode >= sizeof(handlers) / sizeof(handler_t)){
+        response = make_fail_response(request->session, "Unsupported function");
+    }else{
+        response = handlers[request->opcode](request);
+    }
+    
     #ifdef DEBUG_PRINT_OUTPUT_MSG
-        printf("request in, opcode=%d,session=%d,length=%d,data=%s\n", request.opcode, request.session, request.length, request.data);
-        printf("response session=%d,length=%d,data=%s\n", response.session, response.length, response.data);
+        printf("request in, opcode=%d,session=%d,length=%d,data=%s\n", request->opcode, request->session, request->length, request->data);
+        printf("response session=%d,length=%d,data=%s\n", response->session, response->length, response->data);
     #endif
-    ble_send(MANAGE_REPORT_MAP_ID, MANAGER_INPUT_REPORT_ID, (uint8_t *)&response, MANAGE_MESSAGE_LENGTH);
+    if(response->length <= sizeof(response->data)){
+        ble_send(MANAGE_REPORT_MAP_ID, MANAGER_SHORT_MESSAGE_REPORT_ID, (uint8_t *)response, MANAGER_SHORT_MESSAGE_LENGTH);
+        free(response);
+    }else{
+        size_t msg_size = offsetof(response_t, data) + response->length;
+        size_t blk_count = compute_block_count(msg_size);
+        uint16_t session = response->session;
+        for(int i=0;i<blk_count;i++){
+            long_msg_block_t *blk = (long_msg_block_t *)((uint8_t *)response + i * block_data_length - offsetof(long_msg_block_t, data));
+            blk->block_count = blk_count;
+            blk->block_id = i;
+            blk->session = session;
+            ble_send(MANAGE_REPORT_MAP_ID, MANAGER_LONG_MESSAGE_REPORT_ID, (uint8_t *)blk, sizeof(long_msg_block_t));
+        }
+        free((uint8_t *)response - offsetof(long_msg_block_t, data));
+    }
 }
+
+void on_manager_output_short(uint8_t *data, uint16_t length){
+    if(length != MANAGER_SHORT_MESSAGE_LENGTH) return;
+    request_t *request = (request_t *)data;
+    if(request->length > sizeof(request->data))   return;
+    handle_request(request);
+}
+
+void on_manager_output_long();
 
 
 const uint8_t manager_report_desc[] = {
@@ -124,13 +162,26 @@ const uint8_t manager_report_desc[] = {
     0x15, 0x00,        //   Logical Minimum (0)
     0x26, 0xFF, 0x00,  //   Logical Maximum (255)
     0x75, 0x08,        //   Report Size (8)
-    0x95, 0x80,        //   Report Count (128)
+    0x96, 0x80, 0x00,  //   Report Count (128)
     0x91, 0x02,        //   Output (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
     0x09, 0x01,        //   Usage (0x01)
     0x25, 0x00,        //   Logical Maximum (0)
     0x26, 0xFF, 0x00,  //   Logical Maximum (255)
     0x75, 0x08,        //   Report Size (8)
-    0x95, 0x80,        //   Report Count (128)
+    0x96, 0x80, 0x00,  //   Report Count (128)
+    0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x85, 0x04,        //   Report ID (4)
+    0x09, 0x02,        //   Usage (0x02)
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x26, 0xFF, 0x00,  //   Logical Maximum (255)
+    0x75, 0x08,        //   Report Size (8)
+    0x96, 0x00, 0x02,  //   Report Count (512)
+    0x91, 0x02,        //   Output (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
+    0x09, 0x02,        //   Usage (0x02)
+    0x25, 0x00,        //   Logical Maximum (0)
+    0x26, 0xFF, 0x00,  //   Logical Maximum (255)
+    0x75, 0x08,        //   Report Size (8)
+    0x96, 0x00, 0x02,  //   Report Count (512)
     0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
     0xC0,              // End Collection
 };

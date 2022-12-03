@@ -42,7 +42,7 @@ typedef struct
 
 static local_param_t s_ble_hid_param = {0};
 
-void ble_send(size_t mapid, size_t report_id, uint8_t *data, uint8_t length)
+void ble_send(size_t mapid, size_t report_id, uint8_t *data, size_t length)
 {
     if(ble_connected){
         esp_err_t err = esp_hidd_dev_input_set(s_ble_hid_param.hid_dev, mapid, report_id, data, length);
@@ -84,8 +84,8 @@ static void ble_hidd_event_callback(void *handler_args, esp_event_base_t base, i
     case ESP_HIDD_OUTPUT_EVENT: {
         ESP_LOGI(TAG, "OUTPUT[%u]: %8s ID: %2u, Len: %d, Data:", param->output.map_index, esp_hid_usage_str(param->output.usage), param->output.report_id, param->output.length);
         ESP_LOG_BUFFER_HEX(TAG, param->output.data, param->output.length);
-        if(param->output.map_index == 0 && param->output.report_id == MANAGER_OUTPUT_REPORT_ID){
-            on_manager_output(param->output.data, param->output.length);
+        if(param->output.map_index == 0 && param->output.report_id == MANAGER_SHORT_MESSAGE_REPORT_ID){
+            on_manager_output_short(param->output.data, param->output.length);
         }
         break;
     }
