@@ -192,10 +192,35 @@ typedef struct {
 2. 转发的报告描述符需要在蓝牙连接前确定，因此连接新的直通模式设备后设备会将其报告描述符写入Flash中然后重启，在以后每一次蓝牙连接时转发
 3. 至少在Windows系统中(其他没试过)，已配对的设备再次连接时会直接使用以前获取的报告描述符而不会更新，因此插入新的直通模式设备后需要重新配对
 4. 综合上述三项，接入一个直通模式设备的正确步骤是：连接蓝牙->插入新设备->(自动)重启->重新配对->连接使用
-5. 由于模拟usb总线需要高频率定时器中断，而esp32-c3访问内置Flash时会屏蔽非IRAM中断(因为ISR代码可能也在flash中导致并发读取)，可能会导致USB总线出现不稳定甚至短暂断开的问题。解决方法一是将usb用到的ISR及其可能访问的所有数据全部放在IRAM中并开启其IRAM中断标志，就可以实现既不被屏蔽又不影响flash读写，但是usb的ISR过于复杂难以实现。解决方法二是使用外置flash存储对应数据，避免与代码读取冲突。
 
+### 指纹解锁
+待更新
 
-
+## 宏
+宏以当前任意翻译模式设备的标准报告作为输入，触发后以任意标准模型报告作为输出。
+宏以输入而不是输出作为分类标准，即鼠标宏是以鼠标模型作为输入的宏，但可能会输出键盘报告，反之同理。
+目前只完成了鼠标宏，等完成其他部分再来回填（：
+宏定义包含以下要素:触发方式、动作方式、动作内容，对于鼠标宏而言其具体形式如下:
+```c
+typedef struct{
+    saved_list_head_t head;     // 链表头
+    uint8_t     version;
+    uint8_t     trigger_buttons_mask;   // 触发方式
+    // 动作方式
+    uint8_t    cancel_input_report;
+    macro_output_model_t    output_model;
+    uint8_t     action_type;
+    uint16_t    action_delay;       // in ms
+    uint16_t    report_duration;    // for toggle type anction, in ms
+    // 动作内容
+    union{
+        standard_mouse_report_t mouse_output_report;
+    };
+    
+}mouse_macro_t;
+```
+各字段含义可以在这里找对应（懒得写力
+![0a56f68080331c59e524191f464c3b1.png](https://image.lceda.cn/pullimage/eHwQ9LCIZO2EuHs1ERYLI34NoSVvWdEDBr35cUdv.png)
 
 ## WEB管理界面
 上位机主要用于查看设备状态和配置鼠标宏等，基于vue3+typescript编写。使用浏览器提供的[HID API](https://developer.mozilla.org/en-US/docs/Web/API/WebHID_API)与蓝牙连接的设备进行通信，为纯前端页面不需要后端。目前仍在开发阶段，开源地址：[https://github.com/dnstzzx/HID-BLER-Manager](https://github.com/dnstzzx/HID-BLER-Manager)。
@@ -213,41 +238,66 @@ typedef struct {
 0x15, 0x00,        //   Logical Minimum (0)
 0x26, 0xFF, 0x00,  //   Logical Maximum (255)
 0x75, 0x08,        //   Report Size (8)
-0x95, 0x80,        //   Report Count (128)
+0x96, 0x80, 0x00,  //   Report Count (128)
 0x91, 0x02,        //   Output (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
 0x09, 0x01,        //   Usage (0x01)
 0x25, 0x00,        //   Logical Maximum (0)
 0x26, 0xFF, 0x00,  //   Logical Maximum (255)
 0x75, 0x08,        //   Report Size (8)
-0x95, 0x80,        //   Report Count (128)
+0x96, 0x80, 0x00,  //   Report Count (128)
+0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+0x85, 0x04,        //   Report ID (4)
+0x09, 0x02,        //   Usage (0x02)
+0x15, 0x00,        //   Logical Minimum (0)
+0x26, 0xFF, 0x00,  //   Logical Maximum (255)
+0x75, 0x08,        //   Report Size (8)
+0x96, 0x00, 0x02,  //   Report Count (512)
+0x91, 0x02,        //   Output (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
+0x09, 0x02,        //   Usage (0x02)
+0x25, 0x00,        //   Logical Maximum (0)
+0x26, 0xFF, 0x00,  //   Logical Maximum (255)
+0x75, 0x08,        //   Report Size (8)
+0x96, 0x00, 0x02,  //   Report Count (512)
 0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
 0xC0,              // End Collection
 ```
-上述描述符定义了一个输入报告和输出报告。Report ID均为3,Usage Page均为0xFF01，Usage均为0x01，长度均为128字节。
-通信流程采用类似于http的请求-回应模型。其基本结构如下：
+上述描述符定义了两个输入报告和输出报告。这是因为HID协议是定长传输，但传输的信息不定长，为了保证长信息能够顺利传输的同时尽可能降低短消息通信延迟所以分开两个通道进行报告。
+对于短消息(消息体短于128字节)使用Report ID 3通道一次传输完成，长度固定为128字节。
+通信流程采用类似于http的请求-回应模型。其消息体基本结构如下：
 ```c
 #pragma pack(1)
 typedef struct{
     uint16_t opcode;    // 0
-    uint16_t session;   // 2 
+    uint16_t session;   // 2
     uint16_t length;    // 4
-    uint8_t  data[MANAGE_MESSAGE_LENGTH - 6];   // 6
-    uint8_t  endchar;   // 不会被发送，因为js输出的字符串不是c风格的需要补0，防止补0时溢出用
+    uint8_t  data[];   // 6
 }request_t;
 
 typedef struct{
     uint16_t session;   //  0
     uint16_t length;    //  2
     uint8_t  success;   //  4
-    uint8_t  data[MANAGE_MESSAGE_LENGTH - 5];   // 5
+    uint8_t  data[];   // 5
 }response_t;
 #pragma pack()
 ```
-其中opcode为需要请求的功能，类似于http method，session用于区分被响应的请求。对于request请求的data，可能是文本也可能是JSON Object文本，区分方式为第一个字符是否"{"。对于response也是类似的，只是当success为0即请求操作失败时data一定是普通文本用于解释失败原因。
+其中opcode为需要请求的功能，类似于http method，session用于区分被响应的请求。
+对于request请求的data，可能是文本也可能是JSON Object文本，区分方式为第一个字符是否"{"。
+对于response也是类似的，只是当success为0即请求操作失败时data一定是普通文本用于解释失败原因。
 
-## 硬件
-待更新，见[https://oshwhub.com/dnstzzx/c3-hid2](https://oshwhub.com/dnstzzx/c3-hid2)
+而对于更长的消息，我们需要将其进行切片传输，对端收到后在将其重新拼合。每个切片长度为508字节，加上切片包头共512字节(所以存在只有一个切片的情况)。切片包结构为：
+```c
+typedef struct{
+    uint16_t session;       // 0
+    uint8_t block_count;   // 2
+    uint8_t block_id;      // 3
+    uint8_t  data[508]; // 4
+}long_msg_block_t;
+```
+需要注意的是该结构体中data含义与短包中data不同，该data的拼合体还包括了请求/回应中的opcode/session/length/success等字段。
 
-## 3D外壳
-
-待更新
+## 实物组装图
+![c5d6894954eaa6afc50b0fd3933d925.jpg](https://image.lceda.cn/pullimage/kuXhRXwkGLmbEZr05WZSv1Po48Ym2vikqcEKxglZ.jpeg)
+![92124ac7df2f04a0ee18444901f58df.jpg](https://image.lceda.cn/pullimage/fCSHFaImxMIxgWVSMs16gOl2meFz9MIppF5p0RzU.jpeg)
+![ef415715918a88928a9e06b4f5b1b15.jpg](https://image.lceda.cn/pullimage/ejI1dkaLiq9PB4zGcJmmvkHVNx6VD28EjBkM9RTr.jpeg)
+![67834b9ff32243efd19853806ad6c8f.jpg](https://image.lceda.cn/pullimage/5ipFF1s13PMse63NgD0sZv2jWtU8pQ5chT5oHVL3.jpeg)
