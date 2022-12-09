@@ -38,17 +38,11 @@ typedef struct{
 #pragma pack()
 
 
-typedef struct{
-    uint8_t block_count;
-    uint16_t session;
-    uint32_t transferd_blocks;
-    uint8_t *data;
-}long_msg_t;
-
 extern const uint8_t manager_report_desc[];
 extern const size_t manager_report_desc_length;
 
+void manager_init();
 void on_manager_output_short(uint8_t *data, uint16_t length);
-//void on_manager_output_long(uint8_t *data, uint16_t length);
+void on_manager_output_long(uint8_t *data, uint16_t length);
 
 

@@ -86,6 +86,8 @@ static void ble_hidd_event_callback(void *handler_args, esp_event_base_t base, i
         ESP_LOG_BUFFER_HEX(TAG, param->output.data, param->output.length);
         if(param->output.map_index == 0 && param->output.report_id == MANAGER_SHORT_MESSAGE_REPORT_ID){
             on_manager_output_short(param->output.data, param->output.length);
+        }else if(param->output.map_index == 0 && param->output.report_id == MANAGER_LONG_MESSAGE_REPORT_ID){
+            on_manager_output_long(param->output.data, param->output.length);
         }
         break;
     }
