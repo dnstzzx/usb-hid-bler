@@ -1,0 +1,39 @@
+on: push
+jobs:
+  hid-bler:
+    name: build for HID BLER
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install dependencies
+      run: sudo apt-get install -y git wget flex bison gperf python3 python3-venv python3-setuptools cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
+    - name: Cache IDF
+      id: cache-idf
+      uses: actions/cache@v2
+      with:
+        path: esp-idf
+        key: 1
+    - name: Checkout IDF
+      if: steps.cache-idf.outputs.cache-hit != 'true'
+      uses: actions/checkout@v3 
+      with:
+        repository: espressif/esp-idf
+        ref: 97fb98a91b308d4f4db54d6dd1644117607e9692
+        submodules: recursive
+        path: esp-idf
+    - name: Set up IDF tools
+      run: bash ${GITHUB_WORKSPACE}/esp-idf/install.sh esp32c3
+        
+    - name: Checkout repo
+      uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+        path: hid-bler
+    - name: Modify ble_hidd.c
+      run:  cp ${GITHUB_WORKSPACE}/hid-bler/.github/ble_hidd.c.replace ${GITHUB_WORKSPACE}/esp-idf/components/esp_hid/src/ble_hidd.c
+    - name: run build
+      run: |
+        cd ${GITHUB_WORKSPACE}/hid-bler
+        . ${GITHUB_WORKSPACE}/esp-idf/export.sh
+        idf.py build
+        
+
