@@ -4,44 +4,77 @@
 #include "translate.h"
 #include "storage.h"
 
-#define MAX_MOUSE_MACRO_COUNT 16
-#define MAX_KEYBOARD_MACRO_COUNT 16
-
-typedef enum{
+enum{
     MACRO_MODEL_MOUSE
-}macro_output_model_t;
+};
+typedef uint8_t macro_model_t;
 
-// action only once for a series of trigger
-#define MACRO_ACTION_TYPE_ONCE   (0)
-// action as long as trigged
-#define MACRO_ACTION_TYPE_KEEP   (1) 
-// toggle a report timer
-#define MACRO_ACRION_TYPE_TOGGLE (2)
+enum{
+    MACRO_ACTION_TYPE_ONCE,     // action only once for a series of trigger
+    MACRO_ACTION_TYPE_KEEP,     // action as long as trigged
+    MACRO_ACRION_TYPE_TOGGLE    // toggle a report timer
+};
+typedef uint8_t macro_action_type_t;
+
+typedef struct{
+    bool triggered;
+    union{
+        struct{
+            bool last_triggered;
+        } once;
+        struct{
+            size_t last_out_tick;
+        } keep;
+        struct{
+            unsigned on: 1;
+            unsigned last_triggered: 1;
+            size_t last_out_tick;
+        } toggle;
+    };  
+    
+}macro_context_t;
 
 typedef struct{
     saved_list_head_t head;
-    uint8_t     version;
-    uint8_t     trigger_buttons_mask;
-    uint8_t    cancel_input_report;
-    macro_output_model_t    output_model;
-    uint8_t     action_type;
-    uint16_t    action_delay;       // in ms
-    uint16_t    report_duration;    // for toggle type anction, in ms
+    // save zone start
+    uint8_t            version;
 
+    //trigger
+    bool               cancel_input_report;
+    macro_model_t      input_model;
+    union{
+        struct{ // for mouse
+            uint8_t     trigger_buttons_mask;
+        };
+    };
+
+    // action
+    macro_model_t           output_model;
+    macro_action_type_t     action_type;
+    uint16_t                action_delay;       // in ms
+    uint16_t                report_duration;    // in ms
     union{
         standard_mouse_report_t mouse_output_report;
     };
-    
-}mouse_macro_t;
 
-extern saved_list_t *mouse_macros;
+    // save zone end
+    macro_context_t context;
+}macro_t;
+extern saved_list_t *macros;
 void macro_init();
+void enable_macros();
+void disable_macros();
 
-inline mouse_macro_t *get_macro_by_name(const char *name){
-    return (mouse_macro_t *)saved_list_search(mouse_macros, name);
+inline macro_t *get_macro_by_name(const char *name){
+    return (macro_t *)saved_list_search(macros, name);
 }
 
-cJSON *mouse_macro_to_json(mouse_macro_t *macro);
-mouse_macro_t * mouse_macro_from_json(cJSON *json_obj, mouse_macro_t *macro_out);
-void set_mouse_macro(mouse_macro_t *macro);
-bool delete_mouse_macro(const char *macro_name);
+cJSON *macro_to_json(macro_t *macro);
+macro_t * macro_from_json(cJSON *json_obj, macro_t *macro_out);
+void set_macro(macro_t *macro);
+bool delete_macro(const char *macro_name);
+
+/*
+  returns: whether cancel the input
+*/
+bool macro_handle_mouse_input(standard_mouse_report_t *report);

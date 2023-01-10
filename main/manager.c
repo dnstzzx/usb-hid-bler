@@ -165,23 +165,23 @@ response_t *get_macros(request_t *request_in){
     cJSON *json = cJSON_CreateObject();
     cJSON *mouse_macros_json = cJSON_AddArrayToObject(json, "mouse");
     
-    mouse_macro_t *macro;
-    list_for_each_entry(macro, (saved_list_head_t *)mouse_macros, head){
-        cJSON *macro_json = mouse_macro_to_json(macro);
+    macro_t *macro;
+    list_for_each_entry(macro, (saved_list_head_t *)macros, head){
+        cJSON *macro_json = macro_to_json(macro);
         cJSON_AddItemToArray(mouse_macros_json, macro_json);
     }
 
     return make_object_response(request_in->session ,json);
 }
 #define CHECK_NULL(x) if(x==NULL) goto fail;
-response_t *set_macro(request_t *request_in){
+response_t *_set_macro(request_t *request_in){
     cJSON *json = cJSON_Parse((const char *)request_in->data);
     CHECK_NULL(json);
     cJSON *mouse_json = cJSON_GetObjectItem(json, "mouse");
     CHECK_NULL(mouse_json);
-    mouse_macro_t macro;
-    CHECK_NULL(mouse_macro_from_json(mouse_json, &macro));
-    set_mouse_macro(&macro);
+    macro_t macro;
+    CHECK_NULL(macro_from_json(mouse_json, &macro));
+    set_macro(&macro);
     return make_string_response(request_in->session, "ok");
     fail:
     return make_fail_response(request_in->session, "数据格式错误");
@@ -189,17 +189,17 @@ response_t *set_macro(request_t *request_in){
 
 response_t *remove_macro(request_t *request_in){
     size_t l = strlen((const char *)request_in->data);
-    if(l != request_in->length || l >= sizeof(((mouse_macro_t *)0)->head.name)){
+    if(l != request_in->length || l >= sizeof(((macro_t *)0)->head.name)){
         return make_fail_response(request_in->session, "格式错误");
     }
-    return delete_mouse_macro((const char *)request_in->data) ? \
+    return delete_macro((const char *)request_in->data) ? \
             make_string_response(request_in->session, "ok") : make_fail_response(request_in->session, "操作失败");
 }
 
 
 typedef response_t *(*handler_t)(request_t *);
 handler_t handlers[] = {
-    echo, get_info, restart, set_device_name, get_macros, set_macro, remove_macro
+    echo, get_info, restart, set_device_name, get_macros, _set_macro, remove_macro
 };
 
 #define DEBUG_PRINT_OUTPUT_MSG
