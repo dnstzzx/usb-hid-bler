@@ -12,4 +12,6 @@ typedef struct{
 extern install_status_t install_statuses[NUM_USB][4];
 
 
-void usb_main();
+void usb_init();
+void start_usb_timer();
+void stop_usb_timer();

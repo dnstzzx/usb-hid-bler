@@ -22,6 +22,7 @@
 #include "usb_main.h"
 #include "utils.h"
 #include "ble_device.h"
+#include "macro.h"
 
 #define xQueueHandle QueueHandle_t
 #define DP_P   BOARD_USB1_PIN_DP
@@ -92,27 +93,7 @@ void stest()
 }
 
 void start_usb_timer(){
-    timer_config_t config = {
-        .divider = TIMER_DIVIDER,
-        .counter_dir = TIMER_COUNT_UP,
-        .counter_en = TIMER_PAUSE,
-        .alarm_en = TIMER_ALARM_EN,
-        .auto_reload = 1,
-    }; // default clock source is APB
-    setDelay(4);
-    stest();
-    initStates(DP_P,DM_P,DP_P1,DM_P1,DP_P2,DM_P2,DP_P3,DM_P3);
-
-    int timer_idx = TIMER_0;
-    double timer_interval_sec = TIMER_INTERVAL0_SEC;
-
-    timer_init(TIMER_GROUP_0, timer_idx, &config);
-    timer_set_counter_value(TIMER_GROUP_0, timer_idx, 0x00000000ULL);
-    timer_set_alarm_value(TIMER_GROUP_0, timer_idx, timer_interval_sec * TIMER_SCALE);
-    timer_enable_intr(TIMER_GROUP_0, timer_idx);
-    //timer_isr_register(TIMER_GROUP_0, timer_idx, timer_group0_isr,(void *) timer_idx, ESP_INTR_FLAG_IRAM, NULL);
-    timer_isr_register(TIMER_GROUP_0, timer_idx, timer_group0_isr,(void *) timer_idx, 0, NULL);  
-    timer_start(TIMER_GROUP_0, timer_idx);
+    timer_start(TIMER_GROUP_0, TIMER_0);
 }
 
 void stop_usb_timer(){
@@ -216,21 +197,28 @@ void usb_recv(void *param)
             install_status_t *status = &install_statuses[usbid][hidid];
 
             uint8_t *msg_data = msg.data;
-            printf("msg from usb%d/hid%d", usbid, hidid);
-            print_hex_dump(" ", msg_data, length);
+            const bool debug_print = false;
+            if(debug_print){
+                printf("msg from usb%d/hid%d", usbid, hidid);
+                print_hex_dump(" ", msg_data, length);
+            }
             switch(status->mode){
                 case PROCESS_MODE_NONE: continue;
                 case PROCESS_MODE_PASSTHROUGH:
                     ble_send(status->mapid + PREDEFINED_MAP_COUNT, 0, msg_data, length);
-                    printf("passthough report to %d", status->mapid + PREDEFINED_MAP_COUNT);
-                    print_hex_dump("", msg_data, length);
+                    if(debug_print){
+                        printf("passthough report to %d", status->mapid + PREDEFINED_MAP_COUNT);
+                        print_hex_dump("", msg_data, length);
+                    }
                     break;
                 case PROCESS_MODE_TRANSLATE_MOUSE:{
                     static standard_mouse_report_t report_out;
                     translate_mouse_report(&status->mouse_translate, msg_data, length, &report_out);
-                    printf("translate report id %d \n", report_out.report_id);
-                    print_hex_dump("translated report", ((uint8_t *)&report_out) + 1, sizeof(report_out) - 1);
-                    ble_send(0, report_out.report_id, ((uint8_t *)&report_out) + 1, sizeof(report_out) - 1);
+                    //printf("translate report id %d \n", report_out.report_id);
+                    //print_hex_dump("translated report", ((uint8_t *)&report_out) + 1, sizeof(report_out) - 1);
+                    if(!macro_handle_mouse_input(&report_out)){
+                        ble_send(0, report_out.report_id, ((uint8_t *)&report_out) + 1, sizeof(report_out) - 1);
+                    }
                     break;
                 }
                 default: continue;
@@ -252,7 +240,7 @@ void usb_print_task(void *pvParameter)
     while(1)
     {
        printState();     
-	    vTaskDelay(10 / portTICK_PERIOD_MS);
+	    vTaskDelay(100 / portTICK_PERIOD_MS);
     };
 }
 
@@ -262,15 +250,33 @@ int64_t get_system_time_us() {
 	return (tv.tv_sec * 1000000LL + (tv.tv_usec));
 }
 
-
-
-
-void usb_main()
+void usb_init()
 {   
     new_device_Que = xQueueCreate(5, sizeof(sUsbContStruct *));
     usb_mess_Que  = xQueueCreate(32,sizeof(struct USBMessage));
-    xTaskCreate(&handle_new_device, "install_device", 4096, NULL, 0, NULL);
+    xTaskCreate(&handle_new_device, "install_device", 4096, NULL, 1, NULL);
     xTaskCreatePinnedToCore(&usb_recv, "usb_recv", 4096, NULL, 5, NULL, 0);
-    xTaskCreate(&usb_print_task, "usb_print", 4096, NULL, 4, NULL);
+    xTaskCreate(&usb_print_task, "usb_print", 4096, NULL, 0, NULL);
+
+    timer_config_t config = {
+        .divider = TIMER_DIVIDER,
+        .counter_dir = TIMER_COUNT_UP,
+        .counter_en = TIMER_PAUSE,
+        .alarm_en = TIMER_ALARM_EN,
+        .auto_reload = 1,
+    }; // default clock source is APB
+    setDelay(4);
+    stest();
+    initStates(DP_P,DM_P,DP_P1,DM_P1,DP_P2,DM_P2,DP_P3,DM_P3);
+
+    int timer_idx = TIMER_0;
+    double timer_interval_sec = TIMER_INTERVAL0_SEC;
+
+    timer_init(TIMER_GROUP_0, timer_idx, &config);
+    timer_set_counter_value(TIMER_GROUP_0, timer_idx, 0x00000000ULL);
+    timer_set_alarm_value(TIMER_GROUP_0, timer_idx, timer_interval_sec * TIMER_SCALE);
+    timer_enable_intr(TIMER_GROUP_0, timer_idx);
+    //timer_isr_register(TIMER_GROUP_0, timer_idx, timer_group0_isr,(void *) timer_idx, ESP_INTR_FLAG_IRAM, NULL);
+    timer_isr_register(TIMER_GROUP_0, timer_idx, timer_group0_isr,(void *) timer_idx, 0, NULL);  
     
 }

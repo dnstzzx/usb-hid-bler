@@ -455,7 +455,7 @@ static esp_err_t start_bt_scan(uint32_t seconds)
  * BLE GAP
  * */
 
-void usb_main(); 
+void start_usb_timer(); 
 
 static void ble_gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
@@ -507,7 +507,7 @@ static void ble_gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_p
         if (!param->ble_security.auth_cmpl.success) {
             ESP_LOGE(TAG, "BLE GAP AUTH ERROR: 0x%x", param->ble_security.auth_cmpl.fail_reason);
         } else {
-            usb_main(); 
+            start_usb_timer();
             ESP_LOGI(TAG, "BLE GAP AUTH SUCCESS");
         }
         break;
