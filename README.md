@@ -6,20 +6,20 @@
 - **TEANSLATE**工作模式： 检测设备类型，尝试对鼠标和键盘的报告描述符进行解析，将其报告翻译成预定义的标准报告并转发
 - **PASSTHOUGH**工作模式： 对于其他类型设备和解析失败的鼠标键盘，将其报告描述符和报告原样转发
 - 集成电池管理，可使用电池供电、使用USB供电、使用USB为电池供电
-- 鼠键宏： 对于工作在**TEANSLATE**模式的设备可以定义任意鼠标/键盘宏(施工中)
+- 鼠键宏： 对于工作在**TEANSLATE**模式的设备可以定义任意鼠标/键盘宏
 - 指纹解锁：集成指纹模块，通过模拟键盘发送密码实现指纹解锁Windows（施工中）
-- 图形化管理软件： 通过蓝牙HID协议无线控制设备状态(施工中)
+- 上位机管理网页： 通过蓝牙HID协议无线控制设备状态
 
 ## ESP32-C3固件
 开源地址: [https://github.com/dnstzzx/usb-hid-bler](https://github.com/dnstzzx/usb-hid-bler)
 固件代码主要由以下几个部分组成：
 - 基于[esp32_usb_soft_host](https://github.com/sdima1357/esp32_usb_soft_host)的软低速USB HOST
-> 仅支持低速HID设备,以后可能会考虑用esp32-s3的USB PHY支持全速设备
+> 仅支持低速HID设备,以后可能会考虑支持全速设备
 > 识别方法：对设备供电后，D-被拉高的为低速设备，D+被拉高的为全速/高速设备
 - 基于[乐鑫官方例程](https://github.com/espressif/esp-idf/tree/master/examples/bluetooth/esp_hid_device)的BLE HID Device,用于实现将报告转发到蓝牙主机
 - 解析HID报告描述符并尝试将鼠标键盘设备报告翻译为预定义的标准报告,为便于移植该部分代码已分离到[HID-REPORT-TRANSLATER](https://github.com/dnstzzx/hid-report-translater)
-- 鼠键宏， 施工中
-- 下位机通讯，施工中
+- 可通过网页配置的鼠键宏
+- 通过蓝牙HID协议与上位机通讯
 
 ### USB软总线
 本作品带有两路USB A接口用于接入HID设备，均为通过GPIO进行模拟。实现源自[esp32_usb_soft_host](https://github.com/sdima1357/esp32_usb_soft_host)，根据原作者的描述存在以下注意事项：
@@ -120,7 +120,8 @@ uint8_t*     pntS;
 		}
 	 }
 ```
-## 翻译模式
+
+### 翻译模式
 获得报告描述符后会首先根据描述符头部的Usage Page和Usage字段判断插入设备的用途。对于鼠标(键盘待实现)设备的描述符进行解析，获取其各按钮、X坐标、Y坐标输入的长度、报告偏移量、报告值范围。然后计算其与我们预定义的鼠标键盘报告的线性变换关系:
 ```c
 typedef struct {
@@ -193,37 +194,61 @@ typedef struct {
 3. 至少在Windows系统中(其他没试过)，已配对的设备再次连接时会直接使用以前获取的报告描述符而不会更新，因此插入新的直通模式设备后需要重新配对
 4. 综合上述三项，接入一个直通模式设备的正确步骤是：连接蓝牙->插入新设备->(自动)重启->重新配对->连接使用
 
-### 指纹解锁
-待更新
-
-## 宏
+### 宏
 宏以当前任意翻译模式设备的标准报告作为输入，触发后以任意标准模型报告作为输出。
 宏以输入而不是输出作为分类标准，即鼠标宏是以鼠标模型作为输入的宏，但可能会输出键盘报告，反之同理。
 目前只完成了鼠标宏，等完成其他部分再来回填（：
-宏定义包含以下要素:触发方式、动作方式、动作内容，对于鼠标宏而言其具体形式如下:
+宏定义包含以下要素:触发方式、动作方式、动作内容，定义如下：
 ```c
 typedef struct{
     saved_list_head_t head;     // 链表头
-    uint8_t     version;
-    uint8_t     trigger_buttons_mask;   // 触发方式
-    // 动作方式
-    uint8_t    cancel_input_report;
-    macro_output_model_t    output_model;
-    uint8_t     action_type;
-    uint16_t    action_delay;       // in ms
-    uint16_t    report_duration;    // for toggle type anction, in ms
-    // 动作内容
+    // save zone start
+    uint8_t            version;
+
+    //trigger
+    bool               cancel_input_report;
+    macro_model_t      input_model;
+    union{
+        struct{ // for mouse
+            uint8_t     trigger_buttons_mask;
+        };
+    };
+
+    // action
+    macro_model_t           output_model;
+    macro_action_type_t     action_type;
+    uint16_t                action_delay;       // in ms
+    uint16_t                report_duration;    // in ms
     union{
         standard_mouse_report_t mouse_output_report;
     };
-    
-}mouse_macro_t;
+
+    // save zone end
+    macro_context_t context;
+}macro_t;
 ```
 各字段含义可以在这里找对应（懒得写力
 ![0a56f68080331c59e524191f464c3b1.png](https://image.lceda.cn/pullimage/eHwQ9LCIZO2EuHs1ERYLI34NoSVvWdEDBr35cUdv.png)
 
+### 指纹解锁
+待更新
+
+### 软重启到下载模式
+本作品没有串口复位电路，但是可以通过上位机网页远程控制软重启到下载模式。
+IDF中并没有实现该功能的接口，但是esp32-c3技术参考手册中提到可以通过置位RTC_CNTL_OPTION1_REG(0x00F4)寄存器来实现软重启到下载模式，它的线性地址是0x600080F4。
+```c
+bool download_mode = request_in->data[0] == '1';
+if(download_mode){
+    *((uint32_t *)RTC_CNTL_OPTION1_REG) = 1;
+}
+esp_restart();
+```
+
+### 编译指南
+详细的编译流程可以参考[Github Actions](https://github.com/dnstzzx/usb-hid-bler/blob/master/.github/workflows/build.yml),由于IDF的API变动频繁，本项目锁定[97fb98a91b308d4f4db54d6dd1644117607e9692](https://github.com/espressif/esp-idf/tree/97fb98a91b308d4f4db54d6dd1644117607e9692)版本。同时，我们还需要把idf下面components/esp_hid/src/ble_hidd.c替换成[这个文件](https://github.com/dnstzzx/usb-hid-bler/blob/master/.github/ble_hidd.c.replace)来增加蓝牙事件任务栈大小用来解决爆栈问题。如果你实在没有办法在本地编译成功，可以把项目Fork下来用Github Actions编译。
+
 ## WEB管理界面
-上位机主要用于查看设备状态和配置鼠标宏等，基于vue3+typescript编写。使用浏览器提供的[HID API](https://developer.mozilla.org/en-US/docs/Web/API/WebHID_API)与蓝牙连接的设备进行通信，为纯前端页面不需要后端。目前仍在开发阶段，开源地址：[https://github.com/dnstzzx/HID-BLER-Manager](https://github.com/dnstzzx/HID-BLER-Manager)。
+上位机主要用于查看设备状态和配置鼠标宏等，基于vue3+typescript编写。使用浏览器提供的[HID API](https://developer.mozilla.org/en-US/docs/Web/API/WebHID_API)与蓝牙连接的设备进行通信，为纯前端页面不需要后端，开源地址：[https://github.com/dnstzzx/HID-BLER-Manager](https://github.com/dnstzzx/HID-BLER-Manager)。效果见“宏”一节
 > WEB HID目前仍属于实验性功能，请使用PC端版本号高于89的Chrome/Edge或版本号高于75的Opera浏览器访问。
 > ![image.png](https://image.lceda.cn/pullimage/8oWgOt3x2MtNGuIbNSe6PInxrKv2ejxxmdqMfW7i.png)
 
@@ -297,6 +322,7 @@ typedef struct{
 需要注意的是该结构体中data含义与短包中data不同，该data的拼合体还包括了请求/回应中的opcode/session/length/success等字段。
 
 ## 实物组装图
+( 灯光指示主要使用指纹模块的RGB灯，但该部分还没完成所以看起来像没有开机
 ![c5d6894954eaa6afc50b0fd3933d925.jpg](https://image.lceda.cn/pullimage/kuXhRXwkGLmbEZr05WZSv1Po48Ym2vikqcEKxglZ.jpeg)
 ![92124ac7df2f04a0ee18444901f58df.jpg](https://image.lceda.cn/pullimage/fCSHFaImxMIxgWVSMs16gOl2meFz9MIppF5p0RzU.jpeg)
 ![ef415715918a88928a9e06b4f5b1b15.jpg](https://image.lceda.cn/pullimage/ejI1dkaLiq9PB4zGcJmmvkHVNx6VD28EjBkM9RTr.jpeg)
