@@ -35,5 +35,12 @@ jobs:
         cd ${GITHUB_WORKSPACE}/hid-bler
         . ${GITHUB_WORKSPACE}/esp-idf/export.sh
         idf.py build
-        
+    - name: upload firmware
+      uses: actions/upload-artifact@v3
+      with:
+        name: Firmware for HID-BLER
+        path: |
+          ${GITHUB_WORKSPACE}/hid-bler/build/bootloader/bootloader.bin
+          ${GITHUB_WORKSPACE}/hid-bler/build/esp_hid_device.bin
+          ${GITHUB_WORKSPACE}/hid-bler/build/partition_table/partition-table.bin
 
