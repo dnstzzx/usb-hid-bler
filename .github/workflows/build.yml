@@ -40,7 +40,7 @@ jobs:
       with:
         name: Firmware for HID-BLER
         path: |
-          ${GITHUB_WORKSPACE}/hid-bler/build/bootloader/bootloader.bin
-          ${GITHUB_WORKSPACE}/hid-bler/build/esp_hid_device.bin
-          ${GITHUB_WORKSPACE}/hid-bler/build/partition_table/partition-table.bin
+          bootloader/bootloader.bin
+          esp_hid_device.bin
+          partition_table/partition-table.bin
 
