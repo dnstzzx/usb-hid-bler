@@ -40,7 +40,7 @@ jobs:
       with:
         name: Firmware for HID-BLER
         path: |
-          bootloader/bootloader.bin
-          esp_hid_device.bin
-          partition_table/partition-table.bin
+          /home/runner/work/usb-hid-bler/usb-hid-bler/hid-bler/build/bootloader/bootloader.bin
+          /home/runner/work/usb-hid-bler/usb-hid-bler/hid-bler/build/esp_hid_device.bin
+          /home/runner/work/usb-hid-bler/usb-hid-bler/hid-bler/build/partition_table/partition-table.bin
 
