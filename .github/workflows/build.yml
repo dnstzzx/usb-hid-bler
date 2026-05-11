@@ -1,49 +1,196 @@
+name: Build ESP32 C3 Firmware
 on:
   push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
-name: Build
+
 jobs:
-  hid-bler:
-    name: build for HID BLER
+  build-esp32c3:
     runs-on: ubuntu-latest
     steps:
-    - name: Install dependencies
-      run: sudo apt-get install -y git wget flex bison gperf python3 python3-venv python3-setuptools cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
-    - name: Cache IDF
-      id: cache-idf
-      uses: actions/cache@v4
-      with:
-        path: esp-idf
-        key: 1
-    - name: Checkout IDF
-      if: steps.cache-idf.outputs.cache-hit != 'true'
+    - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        repository: espressif/esp-idf
-        ref: 97fb98a91b308d4f4db54d6dd1644117607e9692
         submodules: recursive
-        path: esp-idf
-    - name: Set up IDF tools
-      run: bash ${GITHUB_WORKSPACE}/esp-idf/install.sh esp32c3
-        
-    - name: Checkout repo
-      uses: actions/checkout@v4
-      with:
-        submodules: 'recursive'
-        path: hid-bler
-    - name: Modify ble_hidd.c
-      run:  cp ${GITHUB_WORKSPACE}/hid-bler/.github/ble_hidd.c.replace ${GITHUB_WORKSPACE}/esp-idf/components/esp_hid/src/ble_hidd.c
-    - name: run build
+        lfs: true
+    
+    - name: Debug - Show directory structure
       run: |
-        cd ${GITHUB_WORKSPACE}/hid-bler
-        . ${GITHUB_WORKSPACE}/esp-idf/export.sh
+        echo "=== Current directory structure ==="
+        ls -la
+        echo "=== Checking hid-bler directory ==="
+        if [ -d "hid-bler" ]; then
+          echo "hid-bler directory exists"
+          ls -la hid-bler/
+        else
+          echo "No hid-bler directory found at top level"
+        fi
+        echo "=== Searching for CMakeLists.txt ==="
+        find . -name "CMakeLists.txt" -type f | head -20
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          git \
+          wget \
+          flex \
+          bison \
+          gperf \
+          python3 \
+          python3-pip \
+          python3-venv \
+          cmake \
+          ninja-build \
+          ccache \
+          libffi-dev \
+          libssl-dev \
+          dfu-util \
+          libusb-1.0-0
+    
+    - name: Setup ESP-IDF
+      uses: espressif/setup-idf@v2
+      with:
+        idf-version: 'v5.0.2'  # 使用特定版本
+        target: esp32c3
+        use-installed-python: false
+        install-python-esptool: true
+        install-cmake: true
+        install-ninja: true
+        install-ccache: true
+    
+    - name: Fix Python environment
+      run: |
+        echo "=== Current Python environment ==="
+        python --version
+        pip --version
+        
+        # 修复pkg_resources问题
+        $IDF_PYTHON_EXE -m pip install --upgrade pip
+        $IDF_PYTHON_EXE -m pip install setuptools wheel
+        $IDF_PYTHON_EXE -m pip install cryptography==38.0.4
+        
+        # 安装ESP-IDF的Python依赖
+        if [ -f "$IDF_PATH/requirements.txt" ]; then
+          $IDF_PYTHON_EXE -m pip install -r "$IDF_PATH/requirements.txt"
+        fi
+        
+        echo "=== After fixing Python ==="
+        $IDF_PYTHON_EXE -m pip list | grep -E "(pip|setuptools|wheel|cryptography|pkg_resources)"
+    
+    - name: Configure project
+      run: |
+        echo "=== Finding and configuring project ==="
+        
+        # 查找项目目录
+        if [ -d "hid-bler" ]; then
+          echo "Found hid-bler directory"
+          cd hid-bler
+        elif [ -f "CMakeLists.txt" ]; then
+          echo "CMakeLists.txt found in root directory"
+        else
+          echo "ERROR: Cannot find project directory"
+          exit 1
+        fi
+        
+        echo "Current directory: $(pwd)"
+        echo "Files in current directory:"
+        ls -la
+        
+        # 检查是否是有效的ESP-IDF项目
+        if [ ! -f "CMakeLists.txt" ] && [ ! -f "Makefile" ] && [ ! -f "idf_component.yml" ]; then
+          echo "ERROR: Not a valid ESP-IDF project. No CMakeLists.txt, Makefile, or idf_component.yml found."
+          echo "Please make sure this is an ESP-IDF project with proper structure."
+          exit 1
+        fi
+        
+        # 设置目标芯片
+        echo "Setting target to ESP32-C3..."
+        idf.py set-target esp32c3
+        
+        # 创建默认sdkconfig（如果不存在）
+        if [ ! -f "sdkconfig" ] && [ ! -f "sdkconfig.defaults" ]; then
+          echo "Creating minimal sdkconfig.defaults..."
+          cat > sdkconfig.defaults << EOF
+CONFIG_BT_ENABLED=y
+CONFIG_BTDM_CTRL_MODE_BLE_ONLY=y
+CONFIG_BTDM_CTRL_MODE_BR_EDR_DISABLED=y
+CONFIG_BT_BLUEDROID_ENABLED=n
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_BLE_50_FEATURES_SUPPORTED=y
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+EOF
+        fi
+    
+    - name: Build firmware
+      run: |
+        echo "=== Building project ==="
+        echo "Current directory: $(pwd)"
+        echo "IDF_PATH: $IDF_PATH"
+        
+        # 清理旧的构建
+        idf.py fullclean || echo "Clean failed, continuing..."
+        
+        # 执行构建
+        echo "Starting build..."
         idf.py build
-    - name: upload firmware
+        
+        echo "=== Build completed successfully ==="
+    
+    - name: List build artifacts
+      run: |
+        echo "=== Build artifacts ==="
+        if [ -d "build" ]; then
+          echo "Build directory contents:"
+          ls -la build/
+          
+          echo "Binary files:"
+          find build -name "*.bin" -type f | xargs ls -la
+          
+          echo "Elf file:"
+          find build -name "*.elf" -type f | xargs ls -la
+        else
+          echo "ERROR: No build directory found"
+          exit 1
+        fi
+    
+    - name: Upload firmware
       uses: actions/upload-artifact@v4
       with:
-        name: Firmware for HID-BLER
+        name: esp32c3-firmware
         path: |
-          /home/runner/work/usb-hid-bler/usb-hid-bler/hid-bler/build/bootloader/bootloader.bin
-          /home/runner/work/usb-hid-bler/usb-hid-bler/hid-bler/build/esp_hid_device.bin
-          /home/runner/work/usb-hid-bler/usb-hid-bler/hid-bler/build/partition_table/partition-table.bin
-
+          build/*.bin
+          build/bootloader/*.bin
+          build/partition_table/*.bin
+        retention-days: 7
+    
+    - name: Create firmware package
+      if: success()
+      run: |
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        COMMIT_SHA_SHORT=$(git rev-parse --short HEAD)
+        ZIP_NAME="firmware_esp32c3_${COMMIT_SHA_SHORT}_${TIMESTAMP}.zip"
+        
+        mkdir -p firmware_package
+        cp build/*.bin firmware_package/ 2>/dev/null || true
+        cp build/bootloader/*.bin firmware_package/ 2>/dev/null || true
+        cp build/partition_table/*.bin firmware_package/ 2>/dev/null || true
+        cp build/flash_args firmware_package/ 2>/dev/null || true
+        
+        zip -r "$ZIP_NAME" firmware_package/
+        echo "Created firmware package: $ZIP_NAME"
+        
+    - name: Upload firmware package
+      uses: actions/upload-artifact@v4
+      with:
+        name: firmware-package
+        path: "*.zip"
+        retention-days: 7
